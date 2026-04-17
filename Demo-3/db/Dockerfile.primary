@@ -1,0 +1,15 @@
+FROM postgres:15-alpine
+LABEL demo3.tier="db" demo3.db-role="primary"
+
+# Copy init scripts
+COPY init-primary.sh /docker-entrypoint-initdb.d/
+COPY postgresql.conf /etc/postgresql/postgresql.conf
+COPY pg_hba.conf     /etc/postgresql/pg_hba.conf
+
+ENV POSTGRES_DB=phoenix
+ENV POSTGRES_USER=phoenix
+ENV POSTGRES_PASSWORD=phoenix123
+
+EXPOSE 5432
+
+CMD ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]

@@ -1,0 +1,160 @@
+version: "3.9"
+
+# ══════════════════════════════════════════════════════════════
+#  DEMO-3 — Full Realistic Stack
+#  DEFCON Coimbatore 2026 · Venugopal Parameswara
+#
+#  Ports (all separate from Demo-2 on 9090/7878):
+#    demo3-waf      8090  ← WAF (ModSecurity nginx) — attack entry point
+#    demo3-web      9091  ← Web tier (immutable nginx)
+#    demo3-app      3001  ← App tier (Flask API, stateful)
+#    demo3-db-pri   5432  ← PostgreSQL primary
+#    demo3-db-rep   5433  ← PostgreSQL replica (streaming replication)
+#
+#  Start:  docker compose -f docker-compose3.yml up -d
+#  Stop:   docker compose -f docker-compose3.yml down -v
+# ══════════════════════════════════════════════════════════════
+
+networks:
+  demo3-net:
+    driver: bridge
+    name: demo3-net
+
+volumes:
+  db-primary-data:
+  db-replica-data:
+  waf-logs:
+
+services:
+
+  # ── TIER 1: Web (immutable nginx) ─────────────────────────
+  demo3-web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: demo3-web:golden
+    container_name: demo3-web
+    restart: "no"
+    networks: [demo3-net]
+    ports:
+      - "9091:80"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 3
+    labels:
+      - "demo3.tier=web"
+      - "demo3.immutable=true"
+
+  # ── TIER 2: App (Flask API, stateful) ─────────────────────
+  demo3-app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: demo3-app:golden
+    container_name: demo3-app
+    restart: "no"
+    networks: [demo3-net]
+    ports:
+      - "3001:3001"
+    environment:
+      - DB_HOST=demo3-db-pri
+      - DB_PORT=5432
+      - DB_NAME=phoenix
+      - DB_USER=phoenix
+      - DB_PASS=phoenix123
+      - APP_ENV=demo
+    depends_on:
+      demo3-db-pri:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+    labels:
+      - "demo3.tier=app"
+
+  # ── TIER 3a: PostgreSQL Primary ────────────────────────────
+  demo3-db-pri:
+    build:
+      context: ./db
+      dockerfile: Dockerfile.primary
+    image: demo3-db-primary:golden
+    container_name: demo3-db-pri
+    restart: "no"
+    networks: [demo3-net]
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-primary-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=phoenix
+      - POSTGRES_USER=phoenix
+      - POSTGRES_PASSWORD=phoenix123
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=repl_secret
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phoenix -d phoenix"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    labels:
+      - "demo3.tier=db"
+      - "demo3.db-role=primary"
+
+  # ── TIER 3b: PostgreSQL Replica ────────────────────────────
+  demo3-db-rep:
+    build:
+      context: ./db
+      dockerfile: Dockerfile.replica
+    image: demo3-db-replica:golden
+    container_name: demo3-db-rep
+    restart: "no"
+    networks: [demo3-net]
+    ports:
+      - "5433:5432"
+    volumes:
+      - db-replica-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PRIMARY_HOST=demo3-db-pri
+      - POSTGRES_PRIMARY_PORT=5432
+      - POSTGRES_USER=phoenix
+      - POSTGRES_PASSWORD=phoenix123
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=repl_secret
+    depends_on:
+      demo3-db-pri:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phoenix"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    labels:
+      - "demo3.tier=db"
+      - "demo3.db-role=replica"
+
+  # ── WAF: nginx + ModSecurity in front of web ──────────────
+  demo3-waf:
+    build:
+      context: ./waf
+      dockerfile: Dockerfile
+    image: demo3-waf:golden
+    container_name: demo3-waf
+    restart: "no"
+    networks: [demo3-net]
+    ports:
+      - "8090:80"
+    volumes:
+      - waf-logs:/var/log/modsec
+    depends_on:
+      - demo3-web
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 3
+    labels:
+      - "demo3.tier=waf"

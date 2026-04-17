@@ -1,0 +1,9 @@
+FROM postgres:15-alpine
+LABEL demo3.tier="db" demo3.db-role="replica"
+
+COPY setup-replica.sh /setup-replica.sh
+RUN chmod +x /setup-replica.sh
+
+EXPOSE 5432
+
+CMD ["/setup-replica.sh"]

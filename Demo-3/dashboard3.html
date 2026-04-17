@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Resilience Agent — Three-Tier B-V-R</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --void:    #050507;
+  --deep:    #0A0A10;
+  --surface: #111118;
+  --card:    #161620;
+  --border:  #1E1E2E;
+  --border2: #252535;
+  --muted:   #3A3A55;
+  --dim:     #6B6B99;
+  --text:    #C8C8E8;
+  --bright:  #F0F0FF;
+  --green:   #00FF88;
+  --green2:  #00D68F;
+  --green3:  #006644;
+  --red:     #FF3355;
+  --red2:    #CC2244;
+  --amber:   #FFB800;
+  --amber2:  #CC9200;
+  --blue:    #4488FF;
+  --cyan:    #00CCFF;
+  --purple:  #8855FF;
+  --mono:    'JetBrains Mono', monospace;
+  --sans:    'Space Grotesk', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--void);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Scanline overlay ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* ── Top bar ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--deep);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+
+.topbar-brand {
+  display: flex; align-items: center; gap: 12px;
+}
+
+.brand-mark {
+  width: 32px; height: 32px;
+  background: var(--green);
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  display: flex; align-items: center; justify-content: center;
+  animation: breathe 3s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,100% { opacity:1; transform: scale(1); }
+  50%      { opacity:0.7; transform: scale(0.95); }
+}
+
+.brand-mark.alert {
+  background: var(--red);
+  animation: flash 0.4s ease-in-out infinite;
+}
+
+@keyframes flash {
+  0%,100% { opacity:1; }
+  50%      { opacity:0.3; }
+}
+
+.brand-text {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--green);
+  letter-spacing: 2px;
+}
+
+.brand-sub {
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+
+.topbar-right {
+  display: flex; align-items: center; gap: 24px;
+  font-family: var(--mono); font-size: 11px;
+}
+
+.live-indicator {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--green);
+}
+
+.pulse {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.pulse.red { background: var(--red); }
+.pulse.amber { background: var(--amber); }
+
+@keyframes pulse {
+  0%,100% { opacity:1; transform:scale(1); box-shadow:0 0 0 0 currentColor; }
+  50%      { opacity:0.6; transform:scale(0.85); }
+}
+
+#clock { color: var(--dim); }
+#agent-status-badge {
+  padding: 3px 10px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  background: var(--green3);
+  color: var(--green);
+  border: 1px solid var(--green2);
+  transition: all 0.3s;
+}
+
+/* ── AI Thought strip ── */
+.ai-strip {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 24px;
+  display: flex; align-items: center; gap: 12px;
+  font-family: var(--mono); font-size: 11px;
+  min-height: 36px;
+  overflow: hidden;
+}
+
+.ai-label {
+  color: var(--purple);
+  font-weight: 700;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ai-thought {
+  color: var(--dim);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: all 0.5s;
+}
+
+.ai-thought.active { color: var(--amber); }
+.ai-confidence {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--cyan);
+}
+
+/* ── Main layout ── */
+.main {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Tier panel ── */
+.tier-panel {
+  background: var(--deep);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.4s;
+}
+
+.tier-panel::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  transition: background 0.4s;
+}
+
+.tier-panel.web::before  { background: var(--green); }
+.tier-panel.app::before  { background: var(--blue); }
+.tier-panel.db::before   { background: var(--purple); }
+
+.tier-panel.degraded  { background: #0F0D08; }
+.tier-panel.failed    { background: #110808; }
+.tier-panel.recovering { background: #0A0A08; }
+
+/* Big tier letter */
+.tier-glyph {
+  position: absolute;
+  right: -10px; bottom: -20px;
+  font-size: 120px;
+  font-family: var(--mono);
+  font-weight: 700;
+  opacity: 0.04;
+  line-height: 1;
+  pointer-events: none;
+  transition: opacity 0.4s, color 0.4s;
+}
+
+.tier-panel.failed .tier-glyph { opacity: 0.08; color: var(--red); }
+
+.tier-header {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; margin-bottom: 16px;
+}
+
+.tier-name {
+  font-family: var(--mono);
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 3px; color: var(--dim);
+}
+
+.tier-title {
+  font-size: 16px; font-weight: 600;
+  color: var(--bright); margin-top: 2px;
+}
+
+.tier-subtitle {
+  font-size: 10px; color: var(--dim); margin-top: 1px;
+  font-family: var(--mono);
+}
+
+.status-badge {
+  padding: 3px 8px;
+  border-radius: 2px;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 2px;
+  font-family: var(--mono);
+  white-space: nowrap;
+  transition: all 0.3s;
+}
+
+.badge-healthy   { background:#002211; color:var(--green);  border:1px solid var(--green3); }
+.badge-degraded  { background:#1a1000; color:var(--amber);  border:1px solid var(--amber2); }
+.badge-failed    { background:#1a0005; color:var(--red);    border:1px solid var(--red2); animation: flash 0.6s infinite; }
+.badge-recovering{ background:#0a0a00; color:var(--amber);  border:1px solid var(--amber2); }
+.badge-restored  { background:#002211; color:var(--green);  border:1px solid var(--green2); }
+
+/* Health ring */
+.health-section {
+  display: flex; align-items: center;
+  gap: 16px; margin-bottom: 16px;
+}
+
+.health-ring-wrap {
+  position: relative; width: 64px; height: 64px; flex-shrink: 0;
+}
+
+.health-ring-wrap svg { transform: rotate(-90deg); }
+
+.health-pct-text {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 14px; font-weight: 700;
+  color: var(--bright);
+  transform: none;
+}
+
+.health-label { font-size: 8px; color: var(--dim); letter-spacing: 1px; }
+
+.health-meta { flex: 1; min-width: 0; }
+
+.mttr-display {
+  font-family: var(--mono);
+  font-size: 22px; font-weight: 700;
+  color: var(--green); line-height: 1;
+  transition: color 0.3s;
+}
+
+.mttr-display.na { color: var(--muted); font-size: 16px; }
+.mttr-display.slow { color: var(--amber); }
+.mttr-unit { font-size: 11px; color: var(--dim); margin-top: 2px; font-family: var(--mono); }
+.respawn-count { font-size: 11px; color: var(--dim); font-family: var(--mono); margin-top: 4px; }
+
+/* Metric bars */
+.metrics-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; margin-bottom: 14px;
+}
+
+.metric-item {}
+.metric-name { font-size: 9px; color: var(--dim); letter-spacing: 1px; font-family: var(--mono); margin-bottom: 3px; }
+.metric-bar-bg { height: 3px; background: var(--border2); border-radius: 2px; overflow: hidden; }
+.metric-bar-fill { height: 3px; border-radius: 2px; transition: width 0.8s ease, background 0.4s; }
+.metric-value { font-size: 10px; color: var(--text); font-family: var(--mono); margin-top: 2px; }
+
+/* Sparkline */
+.sparkline-wrap { margin-bottom: 14px; }
+.sparkline-label { font-size: 9px; color: var(--dim); letter-spacing: 1px; font-family: var(--mono); margin-bottom: 4px; }
+canvas.spark { width: 100%; height: 32px; }
+
+/* AI action strip */
+.ai-action-strip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 7px 10px;
+  font-family: var(--mono); font-size: 10px;
+  color: var(--dim);
+  min-height: 32px;
+  transition: all 0.4s;
+  display: flex; align-items: center; gap: 6px;
+}
+
+.ai-action-strip.active {
+  border-color: var(--purple);
+  color: var(--purple);
+  background: #0D0A14;
+}
+
+.ai-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background 0.3s; }
+.ai-action-strip.active .ai-dot { background: var(--purple); animation: pulse 0.8s infinite; }
+
+/* ── Bottom section ── */
+.bottom {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+  min-height: 200px;
+}
+
+/* Event log */
+.event-log {
+  background: var(--deep);
+  padding: 16px 20px;
+}
+
+.section-label {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 3px; color: var(--dim);
+  font-family: var(--mono);
+  margin-bottom: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+
+.section-label::after {
+  content: '';
+  flex: 1; height: 1px;
+  background: var(--border);
+}
+
+.event-row {
+  display: grid;
+  grid-template-columns: 70px 60px 140px 1fr;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10px;
+  align-items: center;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from { opacity:0; transform:translateY(-4px); }
+  to   { opacity:1; transform:none; }
+}
+
+.ev-ts    { color: var(--dim); }
+.ev-tier  { }
+.ev-tier.web  { color: var(--green2); }
+.ev-tier.app  { color: var(--blue); }
+.ev-tier.db   { color: var(--purple); }
+.ev-tier.agent { color: var(--amber); }
+.ev-type  { font-weight: 500; }
+.ev-type.ok   { color: var(--green); }
+.ev-type.warn { color: var(--amber); }
+.ev-type.crit { color: var(--red); }
+.ev-type.info { color: var(--cyan); }
+.ev-detail { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Agent summary */
+.agent-panel {
+  background: var(--deep);
+  padding: 16px 20px;
+  border-left: 1px solid var(--border);
+}
+
+.agent-stat {
+  margin-bottom: 14px;
+}
+
+.agent-stat-label { font-size: 9px; color: var(--dim); letter-spacing: 2px; font-family: var(--mono); margin-bottom: 4px; }
+.agent-stat-value { font-size: 24px; font-weight: 700; font-family: var(--mono); color: var(--bright); line-height: 1; }
+.agent-stat-sub   { font-size: 10px; color: var(--dim); font-family: var(--mono); margin-top: 2px; }
+
+.confidence-bar-bg { height: 4px; background: var(--border2); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+.confidence-bar-fill { height: 4px; background: var(--cyan); border-radius: 2px; transition: width 0.8s; }
+
+/* ── Attack triggers ── */
+.trigger-bar {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex; align-items: center; gap: 12px;
+}
+
+.trigger-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 3px;
+  color: var(--dim); font-family: var(--mono);
+  white-space: nowrap;
+}
+
+.trigger-btn {
+  padding: 7px 16px;
+  border: 1px solid;
+  border-radius: 2px;
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+}
+
+.trigger-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.btn-web  { border-color: var(--green2); color: var(--green2); }
+.btn-web:hover:not(:disabled)  { background: var(--green3); }
+
+.btn-app  { border-color: var(--blue); color: var(--blue); }
+.btn-app:hover:not(:disabled)  { background: #001030; }
+
+.btn-db   { border-color: var(--purple); color: var(--purple); }
+.btn-db:hover:not(:disabled)   { background: #0D0020; }
+
+.btn-waf  { border-color: var(--red); color: var(--red); }
+.btn-waf:hover:not(:disabled)  { background: #1A0008; }
+
+.trigger-note {
+  margin-left: auto;
+  font-size: 9px; color: var(--dim); font-family: var(--mono);
+}
+
+/* ── BVR summary footer ── */
+.bvr-footer {
+  display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 1px; background: var(--border);
+}
+
+.bvr-cell {
+  background: var(--surface);
+  padding: 12px 20px;
+  display: flex; align-items: center; gap: 12px;
+}
+
+.bvr-letter {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 16px; font-weight: 700;
+  flex-shrink: 0;
+}
+
+.bvr-b { background: var(--red2); color: #fff; }
+.bvr-v { background: var(--amber2); color: #000; }
+.bvr-r { background: var(--green3); color: var(--green); }
+.bvr-w { background: #1A0040; border: 1px solid var(--purple); color: var(--purple); }
+
+.bvr-val { font-family: var(--mono); font-size: 18px; font-weight: 700; line-height: 1; }
+.bvr-desc { font-size: 9px; color: var(--dim); margin-top: 2px; font-family: var(--mono); }
+
+.win-text {
+  font-size: 11px; font-weight: 700; font-family: var(--mono);
+  letter-spacing: 1px;
+}
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <div class="brand-mark" id="brandMark"></div>
+    <div>
+      <div class="brand-text">AI RESILIENCE AGENT</div>
+      <div class="brand-sub">THREE-TIER B-V-R · DEFCON COIMBATORE 2026</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="live-indicator"><div class="pulse" id="livePulse"></div><span id="liveLabel">MONITORING</span></div>
+    <span id="agentBadge" class="agent-status-badge">AGENT ACTIVE</span>
+    <span id="clock">--:--:-- IST</span>
+  </div>
+</div>
+
+<!-- AI thought strip -->
+<div class="ai-strip">
+  <span class="ai-label">AI▸</span>
+  <span class="ai-thought" id="aiThought">Initialising — establishing baselines across all tiers...</span>
+  <span class="ai-confidence" id="aiConf">CONF: --%</span>
+</div>
+
+<!-- Three tier panels -->
+<div class="main">
+
+  <!-- WEB TIER -->
+  <div class="tier-panel web" id="panel-WEB">
+    <div class="tier-glyph" style="color:var(--green)">W</div>
+    <div class="tier-header">
+      <div>
+        <div class="tier-name">TIER 1</div>
+        <div class="tier-title">Web Layer</div>
+        <div class="tier-subtitle">nginx · demo3-web:golden · port 9091</div>
+      </div>
+      <div class="status-badge badge-healthy" id="badge-WEB">■ HEALTHY</div>
+    </div>
+    <div class="health-section">
+      <div class="health-ring-wrap">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="27" fill="none" stroke="#1E1E2E" stroke-width="6"/>
+          <circle cx="32" cy="32" r="27" fill="none" stroke="var(--green)" stroke-width="6"
+            stroke-dasharray="169.6" id="ring-WEB"
+            stroke-dashoffset="0" stroke-linecap="round"
+            style="transition:stroke-dashoffset 0.8s ease, stroke 0.4s"/>
+        </svg>
+        <div class="health-pct-text">
+          <span id="pct-WEB">100</span>
+          <span class="health-label">HEALTH</span>
+        </div>
+      </div>
+      <div class="health-meta">
+        <div class="mttr-display" id="mttr-WEB">--</div>
+        <div class="mttr-unit" id="mttr-unit-WEB">Avg MTTR · target &lt; 1s</div>
+        <div class="respawn-count" id="rc-WEB">0 respawns</div>
+      </div>
+    </div>
+    <div class="metrics-grid" id="metrics-WEB"></div>
+    <canvas class="spark" id="spark-WEB" height="32"></canvas>
+    <div class="ai-action-strip" id="ai-WEB">
+      <div class="ai-dot"></div>
+      <span id="ai-text-WEB">Monitoring · polling every 1s · no drift detected</span>
+    </div>
+  </div>
+
+  <!-- APP TIER -->
+  <div class="tier-panel app" id="panel-APP">
+    <div class="tier-glyph" style="color:var(--blue)">A</div>
+    <div class="tier-header">
+      <div>
+        <div class="tier-name">TIER 2</div>
+        <div class="tier-title">App Server</div>
+        <div class="tier-subtitle">Flask API · stateful · port 3001</div>
+      </div>
+      <div class="status-badge badge-healthy" id="badge-APP">■ HEALTHY</div>
+    </div>
+    <div class="health-section">
+      <div class="health-ring-wrap">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="27" fill="none" stroke="#1E1E2E" stroke-width="6"/>
+          <circle cx="32" cy="32" r="27" fill="none" stroke="var(--blue)" stroke-width="6"
+            stroke-dasharray="169.6" id="ring-APP"
+            stroke-dashoffset="0" stroke-linecap="round"
+            style="transition:stroke-dashoffset 0.8s ease, stroke 0.4s"/>
+        </svg>
+        <div class="health-pct-text">
+          <span id="pct-APP">100</span>
+          <span class="health-label">HEALTH</span>
+        </div>
+      </div>
+      <div class="health-meta">
+        <div class="mttr-display" id="mttr-APP">--</div>
+        <div class="mttr-unit" id="mttr-unit-APP">Avg MTTR · target &lt; 5s</div>
+        <div class="respawn-count" id="rc-APP">0 restarts</div>
+      </div>
+    </div>
+    <div class="metrics-grid" id="metrics-APP"></div>
+    <canvas class="spark" id="spark-APP" height="32"></canvas>
+    <div class="ai-action-strip" id="ai-APP">
+      <div class="ai-dot"></div>
+      <span id="ai-text-APP">Monitoring · baseline learned · anomaly threshold set</span>
+    </div>
+  </div>
+
+  <!-- DB TIER -->
+  <div class="tier-panel db" id="panel-DB">
+    <div class="tier-glyph" style="color:var(--purple)">D</div>
+    <div class="tier-header">
+      <div>
+        <div class="tier-name">TIER 3</div>
+        <div class="tier-title">Database</div>
+        <div class="tier-subtitle">PostgreSQL · primary + replica · port 5432</div>
+      </div>
+      <div class="status-badge badge-healthy" id="badge-DB">■ HEALTHY</div>
+    </div>
+    <div class="health-section">
+      <div class="health-ring-wrap">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="27" fill="none" stroke="#1E1E2E" stroke-width="6"/>
+          <circle cx="32" cy="32" r="27" fill="none" stroke="var(--purple)" stroke-width="6"
+            stroke-dasharray="169.6" id="ring-DB"
+            stroke-dashoffset="0" stroke-linecap="round"
+            style="transition:stroke-dashoffset 0.8s ease, stroke 0.4s"/>
+        </svg>
+        <div class="health-pct-text">
+          <span id="pct-DB">100</span>
+          <span class="health-label">HEALTH</span>
+        </div>
+      </div>
+      <div class="health-meta">
+        <div class="mttr-display" id="mttr-DB">--</div>
+        <div class="mttr-unit" id="mttr-unit-DB">Avg MTTR · target &lt; 30s</div>
+        <div class="respawn-count" id="rc-DB">0 failovers</div>
+      </div>
+    </div>
+    <div class="metrics-grid" id="metrics-DB"></div>
+    <canvas class="spark" id="spark-DB" height="32"></canvas>
+    <div class="ai-action-strip" id="ai-DB">
+      <div class="ai-dot"></div>
+      <span id="ai-text-DB">Monitoring · replication lag nominal · PITR ready</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- Bottom section -->
+<div class="bottom">
+
+  <!-- Event log -->
+  <div class="event-log">
+    <div class="section-label">LIVE AI DECISION LOG</div>
+    <div id="eventLog">
+      <div class="event-row">
+        <span class="ev-ts">--:--:--</span>
+        <span class="ev-tier agent">AGENT</span>
+        <span class="ev-type info">INITIALISING</span>
+        <span class="ev-detail">Waiting for agent connection on port 7880...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent summary -->
+  <div class="agent-panel">
+    <div class="section-label">AGENT STATS</div>
+
+    <div class="agent-stat">
+      <div class="agent-stat-label">INCIDENTS HANDLED</div>
+      <div class="agent-stat-value" id="stat-incidents">0</div>
+      <div class="agent-stat-sub">automated — no human paged</div>
+    </div>
+
+    <div class="agent-stat">
+      <div class="agent-stat-label">BLEED PREVENTED</div>
+      <div class="agent-stat-value" style="color:var(--green)" id="stat-saved">$0</div>
+      <div class="agent-stat-sub">at $5,000/min bleed rate</div>
+    </div>
+
+    <div class="agent-stat">
+      <div class="agent-stat-label">AI CONFIDENCE</div>
+      <div class="agent-stat-value" style="font-size:18px" id="stat-conf">--%</div>
+      <div class="confidence-bar-bg">
+        <div class="confidence-bar-fill" id="conf-bar" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Attack trigger bar -->
+<div class="trigger-bar">
+  <span class="trigger-label">TRIGGER SCENARIO →</span>
+  <button class="trigger-btn btn-web" id="btn-web" onclick="trigger('web')">
+    ⚡ WEB ATTACK — Immutable Respawn
+  </button>
+  <button class="trigger-btn btn-app" id="btn-app" onclick="trigger('app')">
+    ⚡ APP CASCADE — AI Ordered Recovery
+  </button>
+  <button class="trigger-btn btn-db" id="btn-db" onclick="trigger('db')">
+    ⚡ DB RANSOMWARE — Fence + PITR
+  </button>
+  <button class="trigger-btn btn-waf" id="btn-waf" onclick="triggerWaf()">
+    🎯 WEB APP ATTACK — SQLi · XSS · Traversal
+  </button>
+  <span class="trigger-note" id="trigger-note">All scenarios auto-recover. Demo-2 on port 9090 unaffected.</span>
+</div>
+
+<!-- BVR footer -->
+<div class="bvr-footer">
+  <div class="bvr-cell">
+    <div class="bvr-letter bvr-b">B</div>
+    <div>
+      <div class="bvr-val" style="color:var(--red)">$5,000</div>
+      <div class="bvr-desc">per minute of darkness</div>
+    </div>
+  </div>
+  <div class="bvr-cell">
+    <div class="bvr-letter bvr-v">V</div>
+    <div>
+      <div class="bvr-val" style="color:var(--amber)">30s</div>
+      <div class="bvr-desc">attacker: access → wipeout</div>
+    </div>
+  </div>
+  <div class="bvr-cell">
+    <div class="bvr-letter bvr-r">R</div>
+    <div>
+      <div class="bvr-val" style="color:var(--green)" id="footer-r">--</div>
+      <div class="bvr-desc" id="footer-r-desc">avg MTTR per attack</div>
+    </div>
+  </div>
+  <div class="bvr-cell">
+    <div class="bvr-letter bvr-r" style="background:var(--purple);color:#fff">C</div>
+    <div>
+      <div class="bvr-val" style="color:var(--purple)" id="footer-combined">--</div>
+      <div class="bvr-desc" id="footer-combined-desc">combined stack MTTR (sum of tier avgs)</div>
+    </div>
+  </div>
+  <div class="bvr-cell">
+    <div class="bvr-letter bvr-w">W</div>
+    <div>
+      <div class="win-text" id="footer-win" style="color:var(--dim)">MEASURING...</div>
+      <div class="bvr-desc">win condition: R &lt; V</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:7880';
+let state = null;
+let sparkData = { WEB: [], APP: [], DB: [] };
+let lastEventCount = 0;
+
+// ── IST Clock ──────────────────────────────────────────────
+function tick() {
+  const ist = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
+  const p = n => String(n).padStart(2,'0');
+  document.getElementById('clock').textContent =
+    `${p(ist.getHours())}:${p(ist.getMinutes())}:${p(ist.getSeconds())} IST`;
+}
+setInterval(tick, 1000); tick();
+
+// ── Trigger scenarios ──────────────────────────────────────
+async function trigger(type) {
+  ['web','app','db'].forEach(t => {
+    document.getElementById(`btn-${t}`).disabled = true;
+  });
+  document.getElementById('trigger-note').textContent = `Running ${type.toUpperCase()} scenario...`;
+  try {
+    await fetch(`${API}/trigger/${type}`);
+  } catch(e) {}
+  setTimeout(() => {
+    ['web','app','db'].forEach(t => {
+      document.getElementById(`btn-${t}`).disabled = false;
+    });
+    document.getElementById('trigger-note').textContent =
+      'All scenarios auto-recover. Demo-2 on port 9090 unaffected.';
+  }, 18000);
+}
+
+// ── Update tier panel ──────────────────────────────────────
+function updateTier(t) {
+  const s = t.status.toLowerCase();
+  const panel = document.getElementById(`panel-${t.name}`);
+  const badge = document.getElementById(`badge-${t.name}`);
+  const ring  = document.getElementById(`ring-${t.name}`);
+  const pct   = document.getElementById(`pct-${t.name}`);
+  const mttr  = document.getElementById(`mttr-${t.name}`);
+  const rc    = document.getElementById(`rc-${t.name}`);
+  const aiEl  = document.getElementById(`ai-${t.name}`);
+  const aiTxt = document.getElementById(`ai-text-${t.name}`);
+
+  // Panel background
+  panel.className = `tier-panel ${t.name.toLowerCase()} ${s === 'healthy' || s === 'restored' ? '' : s}`;
+
+  // Badge
+  const badgeMap = {
+    healthy:   ['badge-healthy',   '■ HEALTHY'],
+    degraded:  ['badge-degraded',  '▲ DEGRADED'],
+    failed:    ['badge-failed',    '✗ FAILED'],
+    recovering:['badge-recovering','⟳ RECOVERING'],
+    restored:  ['badge-restored',  '✓ RESTORED'],
+  };
+  const [bc, bl] = badgeMap[s] || ['badge-healthy', '■ HEALTHY'];
+  badge.className = `status-badge ${bc}`;
+  badge.textContent = bl;
+
+  // Health ring
+  const circumference = 169.6;
+  const offset = circumference * (1 - t.health_pct / 100);
+  ring.style.strokeDashoffset = offset;
+  const ringColor = t.health_pct > 70 ? (t.name === 'WEB' ? 'var(--green)' : t.name === 'APP' ? 'var(--blue)' : 'var(--purple)')
+                  : t.health_pct > 40 ? 'var(--amber)' : 'var(--red)';
+  ring.style.stroke = ringColor;
+  pct.textContent = Math.round(t.health_pct);
+
+  // MTTR — big number is the AVERAGE across all attacks on this tier
+  const targetTxt = t.name === 'WEB' ? '< 1s'
+                  : t.name === 'APP' ? '< 5s' : '< 30s';
+  const unitEl = document.getElementById(`mttr-unit-${t.name}`);
+  const fmt = ms => ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(2)}s`;
+
+  const avg = t.avg_mttr_ms;
+  const last = t.mttr_ms;
+  const n = (t.mttr_history || []).length;
+
+  if (avg) {
+    mttr.textContent = fmt(avg);
+    mttr.className = 'mttr-display' + (avg > 5000 ? ' slow' : '');
+    if (unitEl) {
+      unitEl.textContent = n > 1
+        ? `Avg of ${n} attacks · last ${fmt(last)} · target ${targetTxt}`
+        : `Avg MTTR · last ${fmt(last)} · target ${targetTxt}`;
+    }
+  } else {
+    mttr.textContent = '--';
+    mttr.className = 'mttr-display na';
+    if (unitEl) unitEl.textContent = `Avg MTTR · target ${targetTxt}`;
+  }
+
+  // Respawn count
+  const rcLabel = t.name === 'WEB' ? 'respawns' : t.name === 'APP' ? 'restarts' : 'failovers';
+  rc.textContent = `${t.respawn_count} ${rcLabel}`;
+
+  // Metrics
+  const m = t.metrics || {};
+  const metricsEl = document.getElementById(`metrics-${t.name}`);
+  const metricDefs = t.name === 'DB'
+    ? [['CPU', m.cpu, 100, '%'], ['MEM', m.mem, 100, '%'], ['REPL LAG', m.repl_lag_ms, 1000, 'ms'], ['LATENCY', m.latency_ms, 200, 'ms']]
+    : [['CPU', m.cpu, 100, '%'], ['MEM', m.mem, 100, '%'], ['ERROR RT', m.error_rate, 100, '%'], ['LATENCY', m.latency_ms, 500, 'ms']];
+
+  metricsEl.innerHTML = metricDefs.map(([name, val, max, unit]) => {
+    const v = val || 0;
+    const pctW = Math.min(100, (v / max) * 100);
+    const color = pctW > 80 ? 'var(--red)' : pctW > 50 ? 'var(--amber)' : 'var(--green2)';
+    return `<div class="metric-item">
+      <div class="metric-name">${name}</div>
+      <div class="metric-bar-bg"><div class="metric-bar-fill" style="width:${pctW}%;background:${color}"></div></div>
+      <div class="metric-value">${v.toFixed(1)}${unit}</div>
+    </div>`;
+  }).join('');
+
+  // Sparkline
+  const history = (t.metrics_history || []).slice(0, 30).reverse();
+  const vals = history.map(h => h.latency_ms || h.error_rate || 0);
+  sparkData[t.name] = vals;
+  drawSparkline(t.name, vals, t.health_pct < 70 ? 'var(--red)' : t.name === 'WEB' ? 'var(--green)' : t.name === 'APP' ? 'var(--blue)' : 'var(--purple)');
+
+  // AI action
+  if (t.ai_action) {
+    aiEl.className = 'ai-action-strip active';
+    aiTxt.textContent = t.ai_action;
+  } else {
+    aiEl.className = 'ai-action-strip';
+    const defaults = {
+      WEB: 'Monitoring · polling every 1s · no drift detected',
+      APP: 'Monitoring · baseline learned · anomaly threshold set',
+      DB:  'Monitoring · replication lag nominal · PITR ready',
+    };
+    aiTxt.textContent = defaults[t.name];
+  }
+}
+
+// ── Sparkline ──────────────────────────────────────────────
+function drawSparkline(name, vals, color) {
+  const canvas = document.getElementById(`spark-${name}`);
+  if (!canvas || !vals.length) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 200;
+  const H = 32;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  const max = Math.max(...vals, 1);
+  const pts = vals.map((v, i) => [
+    (i / Math.max(vals.length - 1, 1)) * W,
+    H - (v / max) * (H - 4) - 2
+  ]);
+
+  // Gradient fill — resolve CSS var to a real color so addColorStop accepts it
+  const SPARK_RGBA = {
+    'var(--green)':  'rgba(0,255,136,0.3)',
+    'var(--blue)':   'rgba(68,136,255,0.3)',
+    'var(--purple)': 'rgba(136,85,255,0.3)',
+    'var(--red)':    'rgba(255,51,85,0.3)',
+    'var(--amber)':  'rgba(255,184,0,0.3)',
+  };
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, SPARK_RGBA[color] || 'rgba(0,255,136,0.3)');
+  grad.addColorStop(1, 'transparent');
+
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+
+  // Simple fill — resolve CSS var to a real color for the stroke too
+  const SPARK_STROKE = {
+    'var(--green)':  '#00FF88',
+    'var(--blue)':   '#4488FF',
+    'var(--purple)': '#8855FF',
+    'var(--red)':    '#FF3355',
+    'var(--amber)':  '#FFB800',
+  };
+  ctx.strokeStyle = SPARK_STROKE[color] || color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+  ctx.stroke();
+}
+
+// ── Event log ──────────────────────────────────────────────
+function updateEventLog(aiLog) {
+  if (!aiLog) return;
+  if (aiLog.length === lastEventCount && lastEventCount !== -1) return;
+  lastEventCount = aiLog.length;
+
+  const logEl = document.getElementById('eventLog');
+  const typeMap = {
+    ANOMALY_DETECTED: ['warn', 'ANOMALY'],
+    DRIFT_DETECTED:   ['crit', 'DRIFT'],
+    RESPAWN_START:    ['warn', 'RESPAWN↑'],
+    RESPAWN_SUCCESS:  ['ok',   'RESTORED'],
+    RESTART_SUCCESS:  ['ok',   'RESTORED'],
+    RECOVERY_SUCCESS: ['ok',   'RESTORED'],
+    AI_CLASSIFY:      ['info', 'AI·CLASS'],
+    AI_PREDICT:       ['info', 'AI·PRED'],
+    AI_DECIDE:        ['info', 'AI·DECIDE'],
+    AI_ACT:           ['info', 'AI·ACT'],
+    AI_RESULT:        ['ok',   'AI·RESULT'],
+    CIRCUIT_BREAK:    ['warn', 'CIRCUIT'],
+    REPLICA_FENCED:   ['warn', 'FENCED'],
+    PITR_START:       ['info', 'PITR↑'],
+    TIER_ONLINE:      ['info', 'ONLINE'],
+    ERROR_SPIKE:      ['crit', 'ERROR↑'],
+    DEGRADED:         ['warn', 'DEGRADED'],
+    RESTORED:         ['ok',   'RESTORED'],
+  };
+
+  const rows = aiLog.slice(0, 12).map(ev => {
+    const ts_part = ev.ts ? ev.ts.split(' ')[1] : '--:--:--';
+    const [cls, label] = typeMap[ev.event] || ['info', ev.event.substring(0,8)];
+    const tierCls = (ev.tier || 'AGENT').toLowerCase();
+    const detail = (ev.detail || '').substring(0, 60);
+    return `<div class="event-row">
+      <span class="ev-ts">${ts_part}</span>
+      <span class="ev-tier ${tierCls}">${ev.tier || 'AGENT'}</span>
+      <span class="ev-type ${cls}">${label}</span>
+      <span class="ev-detail">${detail}</span>
+    </div>`;
+  }).join('');
+
+  logEl.innerHTML = rows || logEl.innerHTML;
+}
+
+// ── Agent stats ────────────────────────────────────────────
+function updateAgent(ag) {
+  document.getElementById('stat-incidents').textContent = ag.total_incidents || 0;
+  const saved = ag.total_saved_usd || 0;
+  document.getElementById('stat-saved').textContent =
+    saved >= 1000 ? `$${(saved/1000).toFixed(1)}K` : `$${saved.toFixed(0)}`;
+  const conf = ag.confidence || 0;
+  document.getElementById('stat-conf').textContent = conf + '%';
+  document.getElementById('conf-bar').style.width = conf + '%';
+
+  // AI thought strip
+  const latestAI = (ag.ai_log || []).find(e => e.tier === 'AGENT');
+  const thought = document.getElementById('aiThought');
+  if (latestAI) {
+    thought.textContent = latestAI.detail || 'Monitoring all tiers...';
+    thought.className = 'ai-thought active';
+  } else {
+    thought.textContent = 'Monitoring all tiers — baselines nominal';
+    thought.className = 'ai-thought';
+  }
+  document.getElementById('aiConf').textContent = `CONF: ${conf}%`;
+}
+
+// ── BVR footer ─────────────────────────────────────────────
+//   R chip   = avg MTTR per attack (sum_all_mttrs / total_attacks)
+//   C chip   = combined stack MTTR (sum of each tier's own avg MTTR)
+//   W verdict compares R against V (30s)
+function updateBVR(tiers, rollup) {
+  const fmt = ms => ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(2)}s`;
+
+  // Prefer agent rollup; fall back to client-side calc if absent
+  let avgR = rollup && rollup.avg_mttr_per_attack_ms;
+  let combined = rollup && rollup.combined_mttr_ms;
+  let totalAttacks = rollup && rollup.total_attacks;
+
+  if (avgR == null) {
+    const allMttrs = tiers.flatMap(t => t.mttr_history || []);
+    if (allMttrs.length) {
+      avgR = Math.round(allMttrs.reduce((a,b)=>a+b,0) / allMttrs.length);
+      totalAttacks = allMttrs.length;
+    }
+  }
+  if (combined == null) {
+    const tierAvgs = tiers.map(t => t.avg_mttr_ms).filter(Boolean);
+    if (tierAvgs.length) combined = tierAvgs.reduce((a,b)=>a+b,0);
+  }
+
+  const rEl    = document.getElementById('footer-r');
+  const rDesc  = document.getElementById('footer-r-desc');
+  const cEl    = document.getElementById('footer-combined');
+  const cDesc  = document.getElementById('footer-combined-desc');
+  const win    = document.getElementById('footer-win');
+
+  if (avgR != null) {
+    rEl.textContent   = fmt(avgR);
+    rDesc.textContent = `avg MTTR per attack · n=${totalAttacks||0}`;
+  }
+  if (combined != null) {
+    cEl.textContent   = fmt(combined);
+    const parts = tiers.filter(t => t.avg_mttr_ms).map(t => t.name).join(' + ');
+    cDesc.textContent = parts
+      ? `combined stack MTTR (${parts})`
+      : 'combined stack MTTR';
+  }
+
+  // Win verdict — uses R (avg per attack)
+  if (avgR != null) {
+    if (avgR < 30000) {
+      win.textContent = `✓ WIN: ${fmt(avgR)} < 30s`;
+      win.style.color = 'var(--green)';
+    } else {
+      win.textContent = `△ ${fmt(avgR)} > 30s — optimise R`;
+      win.style.color = 'var(--amber)';
+    }
+  }
+}
+
+// ── Single unified poll loop ────────────────────────────────
+let _seenCount = -1;
+
+async function runPoll() {
+  try {
+    const r = await fetch(`${API}/state?t=${Date.now()}`, {cache:'no-store'});
+    if (!r.ok) throw new Error();
+    const s = await r.json();
+    state = s;
+
+    // Tiers
+    if (s.tiers) { s.tiers.forEach(updateTier); updateBVR(s.tiers, s.rollup); }
+
+    // Agent stats + event log
+    if (s.agent) {
+      updateAgent(s.agent);
+      const log = s.agent.ai_log || [];
+      if (log.length !== _seenCount) {
+        _seenCount = log.length;
+        renderEventLog(log);
+      }
+    }
+
+    // WAF panel
+    if (s.waf) updateWafPanel(s.waf, s.waf_events || []);
+
+    // Live indicator
+    const incident = s.scenario?.active || s.waf?.active;
+    document.getElementById('livePulse').className = 'pulse' + (incident ? ' red' : '');
+    document.getElementById('liveLabel').textContent = incident ? 'INCIDENT' : 'MONITORING';
+    document.getElementById('brandMark').className = 'brand-mark' + (incident ? ' alert' : '');
+
+  } catch(e) {
+    document.getElementById('liveLabel').textContent = 'CONNECTING...';
+    document.getElementById('livePulse').className = 'pulse amber';
+    document.getElementById('aiThought').textContent =
+      'Connecting to AI agent on port 7880...';
+  }
+}
+
+function renderEventLog(aiLog) {
+  const logEl = document.getElementById('eventLog');
+  const typeMap = {
+    ANOMALY_DETECTED: ['warn', 'ANOMALY'],
+    DRIFT_DETECTED:   ['crit', 'DRIFT'],
+    RESPAWN_START:    ['warn', 'RESPAWN↑'],
+    RESPAWN_SUCCESS:  ['ok',   'RESTORED'],
+    RESTART_START:    ['warn', 'RESTART↑'],
+    RESTART_SUCCESS:  ['ok',   'RESTORED'],
+    RECOVERY_SUCCESS: ['ok',   'RESTORED'],
+    FAILOVER_SUCCESS: ['ok',   'FAILOVER'],
+    MASS_WRITE_DETECTED: ['crit','RANSOM↑'],
+    REPLICATION_LAG:  ['warn', 'REPL-LAG'],
+    REPLICA_FENCE_START: ['warn','FENCE↑'],
+    REPLICA_FENCED:   ['warn', 'FENCED'],
+    REPLICA_RESUMED:  ['ok',   'RESTORED'],
+    HEALTH_FAIL:      ['crit', 'HEALTH✗'],
+    REQUEST_BLOCKED:  ['ok',   'BLOCKED'],
+    REQUEST_PASSED:   ['warn', 'PASSED'],
+    ATTACK_START:     ['crit', 'ATTACK↑'],
+    ATTACK_COMPLETE:  ['ok',   'COMPLETE'],
+    AI_SUMMARY:       ['info', 'AI·SUMM'],
+    CONTAINER_UP:     ['info', 'ONLINE'],
+    WATCH_START:      ['info', 'WATCHING'],
+  };
+
+  const tierCls = t => ({'WEB':'web','APP':'app','DB':'db','WAF':'agent','GUARDIAN':'agent','AGENT':'agent'}[t]||'agent');
+
+  const rows = aiLog.slice(0,15).map(ev => {
+    const tp = ev.ts ? ev.ts.split(' ')[1] : '--:--:--';
+    const [cls, lbl] = typeMap[ev.event] || ['info', (ev.event||'').substring(0,8)];
+    const det = (ev.detail||'').substring(0,55);
+    return `<div class="event-row">
+      <span class="ev-ts">${tp}</span>
+      <span class="ev-tier ${tierCls(ev.tier)}">${ev.tier||'AGENT'}</span>
+      <span class="ev-type ${cls}">${lbl}</span>
+      <span class="ev-detail">${det}</span>
+    </div>`;
+  }).join('');
+
+  logEl.innerHTML = rows || `<div class="event-row">
+    <span class="ev-ts">--:--:--</span>
+    <span class="ev-tier agent">AGENT</span>
+    <span class="ev-type info">WAITING</span>
+    <span class="ev-detail">No events yet — run an attack scenario</span>
+  </div>`;
+}
+
+// Poll starts after pollWithWaf is defined below
+// poll();
+// setInterval(poll, 800);
+
+// ── WAF Panel ──────────────────────────────────────────────
+let wafPrevCount = 0;
+
+function triggerWaf() {
+  document.getElementById('btn-waf').disabled = true;
+  document.getElementById('wafPanel').style.display = 'block';
+  document.getElementById('trigger-note').textContent = 'WAF attack running against Phoenix App...';
+  wafPrevCount = 0;
+  // Scroll to panel
+  document.getElementById('wafPanel').scrollIntoView({behavior:'smooth'});
+  fetch(`${API}/trigger/waf`).catch(()=>{});
+  setTimeout(()=>{
+    document.getElementById('btn-waf').disabled = false;
+    document.getElementById('trigger-note').textContent =
+      'All scenarios auto-recover. Demo-2 on port 9090 unaffected.';
+  }, 22000);
+}
+
+const ATTACK_COLORS = {
+  RECON:     {c:'var(--amber)',  bg:'#1A1000'},
+  SQLi:      {c:'var(--red)',    bg:'#1A0005'},
+  XSS:       {c:'#FF6688',      bg:'#180010'},
+  PATH_TRAV: {c:'#FF8844',      bg:'#1A0A00'},
+  BYPASS:    {c:'#FF44AA',      bg:'#1A0015'},
+};
+
+function renderAttackRow(req) {
+  const cfg  = ATTACK_COLORS[req.attack_type] || {c:'var(--dim)', bg:'var(--surface)'};
+  const icon = req.outcome === 'BLOCKED' ? '🛡' : '⚠';
+  const outcomeColor = req.outcome === 'BLOCKED' ? 'var(--green)' : 'var(--amber)';
+
+  return `<div style="display:grid;grid-template-columns:28px 56px 40px 1fr;
+    gap:5px;align-items:start;padding:5px 7px;
+    background:${bg(req.outcome)};border-left:2px solid ${cfg.c};
+    border-radius:0 2px 2px 0;animation:slideIn 0.3s ease">
+    <span style="font-size:11px">${icon}</span>
+    <span style="color:${cfg.c};font-weight:700;font-size:10px">${req.attack_type}</span>
+    <span style="color:${outcomeColor};font-size:10px">${req.status_code}</span>
+    <span style="color:var(--dim);font-size:9px;word-break:break-all;
+      white-space:normal;line-height:1.4">
+      <span style="color:var(--text)">${req.method}</span>
+      ${escHtml(req.path)}
+      <br><span style="color:${cfg.c};opacity:0.8">${escHtml(req.payload.substring(0,50))}${req.payload.length>50?'…':''}</span>
+    </span>
+  </div>`;
+}
+
+function renderDefenderRow(ev) {
+  const isBlocked = ev.blocked;
+  const icon  = isBlocked ? '✓' : '○';
+  const color = isBlocked ? 'var(--green)' : 'var(--amber)';
+  const mitre = ev.req ? ev.req.mitre : '';
+  return `<div style="display:grid;grid-template-columns:16px 60px 1fr;
+    gap:5px;align-items:start;padding:4px 7px;
+    background:${isBlocked?'#001A0A':'#1A1000'};
+    border-left:2px solid ${color};border-radius:0 2px 2px 0;
+    animation:slideIn 0.3s ease">
+    <span style="color:${color};font-weight:700">${icon}</span>
+    <span style="color:var(--dim);font-size:9px;font-family:var(--mono)">${mitre}</span>
+    <span style="color:${isBlocked?'var(--green)':'var(--amber)'};
+      font-size:9px;line-height:1.5;word-break:break-word;white-space:normal">
+      ${escHtml(ev.detail)}
+    </span>
+  </div>`;
+}
+
+function bg(outcome) {
+  return outcome === 'BLOCKED' ? '#0A1A0A' : '#1A0A0A';
+}
+
+function escHtml(s) {
+  return String(s||'')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// MITRE mapping for synthesised request rows (agent log only carries attack_type)
+const MITRE_BY_ATTACK = {
+  RECON:     'T1595.002',
+  SQLi:      'T1190',
+  XSS:       'T1059.007',
+  PATH_TRAV: 'T1083',
+  BYPASS:    'T1548',
+};
+
+function synthReq(ev) {
+  return {
+    method:      'GET',                // not logged; placeholder for renderer
+    path:        ev.detail || '',
+    payload:     ev.detail || '',
+    attack_type: ev.attack_type || 'OTHER',
+    status_code: ev.status_code || '---',
+    mitre:       MITRE_BY_ATTACK[ev.attack_type] || '---',
+    outcome:     ev.event === 'REQUEST_BLOCKED' ? 'BLOCKED' : 'PASSED',
+  };
+}
+
+function updateWafPanel(waf, wafEvs) {
+  if (!waf) return;
+
+  // Status badge — agent emits .status (not .site_status)
+  const badge = document.getElementById('wafStatusBadge');
+  const statusMap = {
+    OPERATIONAL:  {bg:'#002211',color:'var(--green)',  border:'var(--green3)', text:'■ OPERATIONAL'},
+    UNDER_ATTACK: {bg:'#1A0005',color:'var(--red)',    border:'var(--red2)',   text:'▲ UNDER ATTACK'},
+    PROTECTED:    {bg:'#002211',color:'var(--green)',  border:'var(--green2)', text:'✓ PROTECTED'},
+  };
+  const st = statusMap[waf.status || waf.site_status] || statusMap.OPERATIONAL;
+  badge.style.background  = st.bg;
+  badge.style.color       = st.color;
+  badge.style.borderColor = st.border;
+  badge.textContent       = st.text;
+
+  // Attacker IP — agent emits .attacker
+  const ip = waf.attacker || waf.attacker_ip;
+  if (ip) document.getElementById('attackerIp').textContent = ip;
+
+  // Stats — agent emits .total / .blocked / .passed
+  const total   = waf.requests_total ?? waf.total   ?? 0;
+  const blocked = waf.blocked ?? 0;
+  const passed  = waf.passed  ?? 0;
+  document.getElementById('wafReqTotal').textContent  = total;
+  document.getElementById('wafPassed').textContent    = passed;
+  document.getElementById('wafBlocked').textContent   = blocked;
+  document.getElementById('wafBlockRate').textContent =
+    (total > 0 ? Math.round((blocked / total) * 100) : 0) + '%';
+  document.getElementById('wafExploits').textContent  = '0';
+
+  // Progress bar — derive phase from event count if agent doesn't supply one
+  const phase = waf.phase ?? Math.min(total, 15);
+  const progress = total > 0 ? Math.round((phase / 15) * 100) : 0;
+  document.getElementById('wafProgress').style.width = progress + '%';
+  document.getElementById('wafPhaseText').textContent = `${phase} / 15`;
+
+  // Only re-render rows when event count changes
+  if (!wafEvs || wafEvs.length === wafPrevCount) return;
+  wafPrevCount = wafEvs.length;
+
+  // Build request rows from the flat events the agent actually emits
+  const reqEvents = wafEvs.filter(e =>
+    e.event === 'REQUEST_BLOCKED' || e.event === 'REQUEST_PASSED');
+  const decisionEvents = wafEvs.filter(e =>
+    e.event === 'REQUEST_BLOCKED' || e.event === 'REQUEST_PASSED' ||
+    e.event === 'ATTACK_COMPLETE' || e.event === 'AI_SUMMARY');
+
+  // Attacker stream — most recent first (waf_events from agent already newest-first)
+  const attackRows = reqEvents
+    .slice(0, 8)
+    .map(e => renderAttackRow(synthReq(e)))
+    .join('');
+  if (attackRows) {
+    document.getElementById('attackStream').innerHTML = attackRows;
+  }
+
+  // Current MITRE tag — pick newest matched request
+  const latest = reqEvents[0];
+  if (latest) {
+    document.getElementById('wafMitreTag').textContent =
+      MITRE_BY_ATTACK[latest.attack_type] || '---';
+  }
+
+  // Defender stream — make synth req available so renderDefenderRow can show MITRE
+  const defRows = decisionEvents
+    .filter(e => e.detail && e.detail.length > 5)
+    .slice(0, 8)
+    .map(e => {
+      const wrapped = Object.assign({}, e);
+      if (e.event === 'REQUEST_BLOCKED' || e.event === 'REQUEST_PASSED') {
+        wrapped.req = synthReq(e);
+        wrapped.blocked = (e.event === 'REQUEST_BLOCKED');
+      }
+      return renderDefenderRow(wrapped);
+    })
+    .join('');
+  if (defRows) {
+    document.getElementById('defenderStream').innerHTML = defRows;
+  }
+}
+
+// ── Start polling ───────────────────────────────────────────
+setInterval(runPoll, 800);
+runPoll();
+</script>
+<!-- WAF Attack Panel — hidden until triggered -->
+<div id="wafPanel" style="display:none">
+
+<div style="background:var(--border);height:1px"></div>
+
+<!-- WAF header bar -->
+<div style="background:var(--surface);border-bottom:1px solid var(--border);
+     padding:10px 24px;display:flex;align-items:center;gap:14px">
+  <div style="font-family:var(--mono);font-size:10px;font-weight:700;
+       letter-spacing:3px;color:var(--red)">
+    🎯 LIVE ATTACK — PHOENIX APP
+  </div>
+  <div style="font-family:var(--mono);font-size:10px;color:var(--dim)">
+    Attacker vs Defender · SQL Injection · XSS · Path Traversal · MITRE ATT&CK mapped
+  </div>
+  <div id="wafStatusBadge" style="margin-left:auto;padding:3px 10px;
+       font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:2px;
+       border-radius:2px;background:#002211;color:var(--green);
+       border:1px solid var(--green3)">■ OPERATIONAL</div>
+</div>
+
+<!-- Split: attacker left | defender right -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;
+     background:var(--border);min-height:320px">
+
+  <!-- ATTACKER SIDE -->
+  <div style="background:#0F0508;padding:18px 20px">
+    <div style="font-family:var(--mono);font-size:9px;font-weight:700;
+         letter-spacing:3px;color:var(--red);margin-bottom:14px;
+         display:flex;align-items:center;gap:8px">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--red);
+           display:inline-block;animation:pulse 0.8s infinite"></span>
+      ATTACKER TERMINAL
+    </div>
+
+    <!-- Attacker IP + stats -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;
+         margin-bottom:14px">
+      <div style="background:#1A0008;border:1px solid var(--red2);
+           border-radius:2px;padding:8px 10px">
+        <div style="font-size:8px;color:var(--dim);font-family:var(--mono);
+             letter-spacing:1px;margin-bottom:3px">SOURCE IP</div>
+        <div id="attackerIp" style="font-family:var(--mono);font-size:11px;
+             color:var(--red);font-weight:700">---.---.---.---</div>
+      </div>
+      <div style="background:#1A0008;border:1px solid var(--red2);
+           border-radius:2px;padding:8px 10px">
+        <div style="font-size:8px;color:var(--dim);font-family:var(--mono);
+             letter-spacing:1px;margin-bottom:3px">REQUESTS SENT</div>
+        <div id="wafReqTotal" style="font-family:var(--mono);font-size:18px;
+             color:var(--red);font-weight:700;line-height:1">0</div>
+      </div>
+      <div style="background:#1A0008;border:1px solid var(--red2);
+           border-radius:2px;padding:8px 10px">
+        <div style="font-size:8px;color:var(--dim);font-family:var(--mono);
+             letter-spacing:1px;margin-bottom:3px">GOT THROUGH</div>
+        <div id="wafPassed" style="font-family:var(--mono);font-size:18px;
+             color:var(--amber);font-weight:700;line-height:1">0</div>
+      </div>
+    </div>
+
+    <!-- Attack request stream -->
+    <div style="font-size:8px;color:var(--dim);font-family:var(--mono);
+         letter-spacing:2px;margin-bottom:8px">REQUEST STREAM</div>
+    <div id="attackStream" style="font-family:var(--mono);font-size:10px;
+         display:flex;flex-direction:column;gap:4px;max-height:200px;overflow:hidden">
+      <div style="color:var(--muted);font-style:italic">
+        Waiting for attack trigger...
+      </div>
+    </div>
+  </div>
+
+  <!-- DEFENDER SIDE -->
+  <div style="background:#050F08;padding:18px 20px">
+    <div style="font-family:var(--mono);font-size:9px;font-weight:700;
+         letter-spacing:3px;color:var(--green);margin-bottom:14px;
+         display:flex;align-items:center;gap:8px">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--green);
+           display:inline-block;animation:breathe 1.4s infinite"></span>
+      AI WAF — DEFENDER
+    </div>
+
+    <!-- Defender stats -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;
+         margin-bottom:14px">
+      <div style="background:#002211;border:1px solid var(--green3);
+           border-radius:2px;padding:8px 10px">
+        <div style="font-size:8px;color:var(--dim);font-family:var(--mono);
+             letter-spacing:1px;margin-bottom:3px">BLOCKED</div>
+        <div id="wafBlocked" style="font-family:var(--mono);font-size:18px;
+             color:var(--green);font-weight:700;line-height:1">0</div>
+      </div>
+      <div style="background:#002211;border:1px solid var(--green3);
+           border-radius:2px;padding:8px 10px">
+        <div style="font-size:8px;color:var(--dim);font-family:var(--mono);
+             letter-spacing:1px;margin-bottom:3px">BLOCK RATE</div>
+        <div id="wafBlockRate" style="font-family:var(--mono);font-size:18px;
+             color:var(--green);font-weight:700;line-height:1">--%</div>
+      </div>
+      <div style="background:#002211;border:1px solid var(--green3);
+           border-radius:2px;padding:8px 10px">
+        <div style="font-size:8px;color:var(--dim);font-family:var(--mono);
+             letter-spacing:1px;margin-bottom:3px">EXPLOITS</div>
+        <div id="wafExploits" style="font-family:var(--mono);font-size:18px;
+             color:var(--green);font-weight:700;line-height:1">0</div>
+      </div>
+    </div>
+
+    <!-- AI decision stream -->
+    <div style="font-size:8px;color:var(--dim);font-family:var(--mono);
+         letter-spacing:2px;margin-bottom:8px">AI DECISION LOG</div>
+    <div id="defenderStream" style="font-family:var(--mono);font-size:10px;
+         display:flex;flex-direction:column;gap:4px;max-height:200px;overflow:hidden">
+      <div style="color:var(--muted);font-style:italic">
+        AI WAF active — monitoring request stream...
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Progress bar -->
+<div style="background:var(--surface);border-top:1px solid var(--border);
+     padding:8px 24px;display:flex;align-items:center;gap:12px">
+  <div style="font-size:9px;font-family:var(--mono);color:var(--dim);
+       letter-spacing:2px;white-space:nowrap">ATTACK PROGRESS</div>
+  <div style="flex:1;height:4px;background:var(--border2);border-radius:2px;overflow:hidden">
+    <div id="wafProgress" style="height:4px;background:var(--red);
+         border-radius:2px;width:0%;transition:width 0.5s"></div>
+  </div>
+  <div id="wafPhaseText" style="font-size:9px;font-family:var(--mono);
+       color:var(--dim);white-space:nowrap">0 / 10</div>
+  <div id="wafMitreTag" style="padding:2px 8px;background:#1A0008;
+       border:1px solid var(--red2);border-radius:2px;
+       font-size:9px;font-family:var(--mono);color:var(--red)">--</div>
+</div>
+
+</div><!-- end wafPanel -->
+
+</body>
+</html>
