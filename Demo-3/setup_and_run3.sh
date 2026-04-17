@@ -184,8 +184,11 @@ cmd_start() {
         old_pid=$(cat "$GUARDIAN_PID_FILE")
         kill "$old_pid" 2>/dev/null || true
     fi
-    bash "${GUARDIAN}" &
+    # nohup + disown so the guardian survives this shell exiting
+    # (important when launched from a one-click .command file)
+    nohup bash "${GUARDIAN}" > /tmp/demo3_guardian.out 2>&1 &
     echo $! > "$GUARDIAN_PID_FILE"
+    disown 2>/dev/null || true
     sleep 1
     ok "Guardian watching all 3 tiers"
 
@@ -195,8 +198,9 @@ cmd_start() {
         old_pid=$(cat "$AGENT_PID_FILE")
         kill "$old_pid" 2>/dev/null || true
     fi
-    python3 "${AGENT}" &
+    nohup python3 "${AGENT}" > /tmp/demo3_agent.out 2>&1 &
     echo $! > "$AGENT_PID_FILE"
+    disown 2>/dev/null || true
     sleep 1
     if curl -s --connect-timeout 2 "http://localhost:${AGENT_PORT}/state" &>/dev/null; then
         ok "AI agent running on :${AGENT_PORT}"
